@@ -1,15 +1,17 @@
 package com.zksrus.pulse.viewmodel
 
 import android.app.Application
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.zksrus.pulse.ble.HeartRateManager
 import com.zksrus.pulse.ble.HeartRateParser
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +54,15 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     private val _hasPermissions = MutableStateFlow(false)
     val hasPermissions: StateFlow<Boolean> = _hasPermissions.asStateFlow()
 
+    /**
+     * On Android 11 and below the system Location service must be ON for BLE scans to return
+     * results. The UI shows a banner when this is false.
+     */
+    private val _locationEnabled = MutableStateFlow(true)
+    val locationEnabled: StateFlow<Boolean> = _locationEnabled.asStateFlow()
+
+    private var scanTimeoutJob: Job? = null
+
     init {
         manager.scanListener = object : HeartRateManager.ScanListener {
             override fun onDeviceFound(device: HeartRateManager.HrDevice) {
@@ -62,7 +73,7 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onScanFailed(errorCode: Int) {
-                _uiState.value = UiState.Error("Scan failed (error $errorCode)")
+                _uiState.value = UiState.Error(manager.describeScanError(errorCode))
             }
         }
 
@@ -101,20 +112,21 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshBluetoothState() {
         val bm = getApplication<Application>().getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         _bluetoothEnabled.value = bm?.adapter?.isEnabled == true
+        refreshLocationState()
+    }
+
+    fun refreshLocationState() {
+        // Only relevant on Android 11 and below, but cheap to compute everywhere.
+        val lm = getApplication<Application>().getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        _locationEnabled.value = lm?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+            lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
     }
 
     fun checkPermissions(): Boolean {
         val pm = getApplication<Application>().packageManager
-        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            requiredPermissionsSPlus().all {
-                pm.checkPermission(it, getApplication<Application>().packageName) ==
-                    PackageManager.PERMISSION_GRANTED
-            }
-        } else {
-            requiredPermissionsPreS().all {
-                pm.checkPermission(it, getApplication<Application>().packageName) ==
-                    PackageManager.PERMISSION_GRANTED
-            }
+        val pkg = getApplication<Application>().packageName
+        val granted = requiredPermissions().all {
+            pm.checkPermission(it, pkg) == PackageManager.PERMISSION_GRANTED
         }
         _hasPermissions.value = granted
         return granted
@@ -130,12 +142,29 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = UiState.Error("Bluetooth is turned off")
             return
         }
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R && !_locationEnabled.value) {
+            // On Android 11 and below the Location service must be enabled or the scan returns
+            // no results (and on some OEMs it fails outright).
+            _uiState.value = UiState.Error("Turn on Location (GPS) to scan for BLE devices")
+            return
+        }
         _devices.value = emptyList()
         _uiState.value = UiState.Scanning
-        manager.startScan()
+        val started = manager.startScan()
+        if (!started) {
+            _uiState.value = UiState.Error("Could not start scanning. Check Bluetooth and permissions.")
+            return
+        }
+        // Stop scanning after a while so we don't drain the battery; the user can refresh again.
+        scanTimeoutJob?.cancel()
+        scanTimeoutJob = viewModelScope.launch {
+            delay(SCAN_TIMEOUT_MS)
+            stopScan()
+        }
     }
 
     fun stopScan() {
+        scanTimeoutJob?.cancel()
         manager.stopScan()
         if (_uiState.value is UiState.Scanning) {
             _uiState.value = UiState.Idle
@@ -158,22 +187,29 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        scanTimeoutJob?.cancel()
         manager.stopScan()
         manager.disconnect()
     }
+
+    private companion object {
+        /** How long a single scan runs before auto-stopping (ms). */
+        const val SCAN_TIMEOUT_MS = 15_000L
+    }
 }
 
-/** Permissions required on Android 12+ (API 31+). */
-private fun requiredPermissionsSPlus(): Array<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-    arrayOf(
-        android.Manifest.permission.BLUETOOTH_SCAN,
-        android.Manifest.permission.BLUETOOTH_CONNECT,
-    )
-} else emptyArray()
-
-/** Permissions required on Android 11 and below. */
-private fun requiredPermissionsPreS(): Array<String> = arrayOf(
-    android.Manifest.permission.BLUETOOTH,
-    android.Manifest.permission.BLUETOOTH_ADMIN,
-    android.Manifest.permission.ACCESS_FINE_LOCATION,
-)
+/**
+ * All runtime permissions the app needs. On Android 12+ that's the new Bluetooth permissions
+ * plus location (kept because some OEM stacks still require it for BLE). On older versions the
+ * legacy Bluetooth permissions plus fine location are mandatory for scanning.
+ */
+private fun requiredPermissions(): Array<String> = buildList {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        add(android.Manifest.permission.BLUETOOTH_SCAN)
+        add(android.Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        add(android.Manifest.permission.BLUETOOTH)
+        add(android.Manifest.permission.BLUETOOTH_ADMIN)
+    }
+    add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+}.toTypedArray()

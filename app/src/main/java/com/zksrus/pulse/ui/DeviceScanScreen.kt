@@ -42,8 +42,6 @@ import com.zksrus.pulse.viewmodel.PulseViewModel
 fun DeviceScanScreen(viewModel: PulseViewModel) {
     val devices by viewModel.devices.collectAsStateLifecycle()
     val uiState by viewModel.uiState.collectAsStateLifecycle()
-    val bluetoothEnabled by viewModel.bluetoothEnabled.collectAsStateLifecycle()
-    val hasPermissions by viewModel.hasPermissions.collectAsStateLifecycle()
 
     Scaffold(
         topBar = {
@@ -69,24 +67,6 @@ fun DeviceScanScreen(viewModel: PulseViewModel) {
                 .padding(padding)
                 .padding(horizontal = 16.dp),
         ) {
-            if (!hasPermissions) {
-                PermissionBanner(onRequestPermissions = {})
-                return@Column
-            }
-            if (!bluetoothEnabled) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "Bluetooth is turned off. Please enable Bluetooth to scan for devices.",
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                return@Column
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -97,10 +77,12 @@ fun DeviceScanScreen(viewModel: PulseViewModel) {
                         is PulseViewModel.UiState.Scanning -> "Scanning…"
                         is PulseViewModel.UiState.Connecting -> "Connecting…"
                         is PulseViewModel.UiState.Error -> (uiState as PulseViewModel.UiState.Error).message
-                        else -> "Pull to refresh is via the top-right button"
+                        else -> "Tap the refresh button in the top-right to scan"
                     },
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (uiState is PulseViewModel.UiState.Error)
+                        MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurface,
                 )
                 if (uiState is PulseViewModel.UiState.Scanning) {
                     CircularProgressIndicator(modifier = Modifier.height(20.dp))
@@ -114,12 +96,19 @@ fun DeviceScanScreen(viewModel: PulseViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
+                    val text = when {
+                        uiState is PulseViewModel.UiState.Scanning ->
+                            "Looking for heart-rate monitors…\nMake sure your monitor is switched on and nearby."
+                        uiState is PulseViewModel.UiState.Error ->
+                            "Could not find any devices.\n" +
+                                "Check that Bluetooth and Location are enabled, then try again."
+                        else -> "No devices found.\nTap the refresh button to scan."
+                    }
                     Text(
-                        text = if (uiState is PulseViewModel.UiState.Scanning)
-                            "Looking for heart-rate monitors…"
-                        else "No devices found. Tap the refresh button to scan.",
+                        text = text,
                         fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                 }
             } else {
@@ -161,19 +150,5 @@ private fun DeviceRow(device: HeartRateManager.HrDevice, onClick: () -> Unit) {
             )
         }
         Text(text = "${device.rssi} dBm", fontSize = 14.sp)
-    }
-}
-
-@Composable
-private fun PermissionBanner(onRequestPermissions: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            "Bluetooth permissions are required to scan for heart-rate monitors.",
-            fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.error,
-        )
     }
 }

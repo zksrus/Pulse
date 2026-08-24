@@ -39,24 +39,21 @@ import com.zksrus.pulse.viewmodel.PulseViewModel
 class MainActivity : ComponentActivity() {
 
     private val requiredPermissions: Array<String>
-        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-            )
-        } else {
-            arrayOf(
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-            )
-        }
+        get() = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_SCAN)
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                add(Manifest.permission.BLUETOOTH)
+                add(Manifest.permission.BLUETOOTH_ADMIN)
+            }
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }.toTypedArray()
 
     private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-            if (result.values.all { it }) {
-                viewModel.startScan()
-            }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+            // Re-check rather than trusting the result, then scan if everything is granted.
+            if (checkPermissions()) viewModel.startScan()
         }
 
     private lateinit var viewModel: PulseViewModel
@@ -80,19 +77,24 @@ class MainActivity : ComponentActivity() {
     private fun AppContent() {
         var hasPermissions by remember { mutableStateOf(checkPermissions()) }
         val bluetoothEnabled by viewModel.bluetoothEnabled.collectAsStateWithLifecycle()
+        val locationEnabled by viewModel.locationEnabled.collectAsStateWithLifecycle()
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+        // Keep recomputing permission state so the UI reacts when the user grants them.
+        hasPermissions = checkPermissions()
 
         when {
             !hasPermissions -> PermissionScreen(
-                onRequest = {
-                    permissionLauncher.launch(requiredPermissions)
-                    hasPermissions = checkPermissions()
-                },
+                onRequest = { permissionLauncher.launch(requiredPermissions) },
             )
 
             !bluetoothEnabled -> BluetoothDisabledScreen(
                 onEnable = { promptEnableBluetooth() },
             )
+
+            // On Android 11 and below the system Location service must be ON for BLE scans.
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.R && !locationEnabled ->
+                LocationDisabledScreen(onEnable = { promptEnableLocation() })
 
             uiState == PulseViewModel.UiState.Measuring ||
                 uiState == PulseViewModel.UiState.Connecting -> HeartRateScreen(viewModel)
@@ -105,7 +107,10 @@ class MainActivity : ComponentActivity() {
     private fun PermissionScreen(onRequest: () -> Unit) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Pulse needs Bluetooth permissions to find heart-rate monitors.", fontSize = 16.sp)
+                Text(
+                    "Pulse needs Bluetooth and Location permissions to scan for heart-rate monitors.",
+                    fontSize = 16.sp,
+                )
                 Spacer(modifier = Modifier.padding(20.dp))
                 Button(onClick = onRequest) { Text("Grant permissions") }
             }
@@ -123,6 +128,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    private fun LocationDisabledScreen(onEnable: () -> Unit) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Location is turned off.", fontSize = 18.sp)
+                Text(
+                    "Android requires the Location service to be enabled to scan for BLE devices.",
+                    fontSize = 14.sp,
+                )
+                Spacer(modifier = Modifier.padding(20.dp))
+                Button(onClick = onEnable) { Text("Turn on Location") }
+            }
+        }
+    }
+
     private fun checkPermissions(): Boolean = requiredPermissions.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
@@ -135,13 +155,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun promptEnableLocation() {
+        startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.refreshBluetoothState()
-        if (checkPermissions() &&
-            isBluetoothEnabled() &&
-            viewModel.uiState.value == PulseViewModel.UiState.Idle
-        ) {
+        viewModel.refreshLocationState()
+        if (!checkPermissions()) {
+            // Defer to the Compose UI which shows the permission screen.
+            return
+        }
+        if (isBluetoothEnabled() && viewModel.uiState.value == PulseViewModel.UiState.Idle) {
             viewModel.startScan()
         }
     }

@@ -3,7 +3,6 @@
 
     <!-- Android 12+ (API 31+) permissions for BLE -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s"
         xmlns:tools="http://schemas.android.com/tools" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -12,9 +11,12 @@
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
-    <!-- Needed to scan for BLE devices on Android 11 and below -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
+    <!--
+      Location is required to scan for BLE devices on Android 11 and below. It is kept for all
+      versions because some Android 12+ OEM stacks still gate BLE scanning behind it.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Declare that the app uses BLE and is useless without it -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />

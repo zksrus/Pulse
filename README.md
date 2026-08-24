@@ -38,10 +38,11 @@ name-based detection for devices that don't advertise the service.
 | `BLUETOOTH_SCAN` | Scan for BLE devices (Android 12+) |
 | `BLUETOOTH_CONNECT` | Connect to a device (Android 12+) |
 | `BLUETOOTH` / `BLUETOOTH_ADMIN` | Scan/connect on Android 11 and below |
-| `ACCESS_FINE_LOCATION` | Required to scan on Android 11 and below |
+| `ACCESS_FINE_LOCATION` | Required to scan for BLE devices (mandatory on Android 11 and below; kept on 12+ because some OEM stacks still require it) |
 
-`BLUETOOTH_SCAN` uses `neverForLocation` because the app does not derive the user's location
-from Bluetooth scans.
+**Note:** on Android 11 and below the system **Location service must be switched on** for BLE
+scans to return any results — even though the app doesn't use your location for anything else.
+The app detects this and shows a "Turn on Location" prompt.
 
 ## Build
 

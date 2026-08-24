@@ -9,12 +9,10 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
-import android.os.ParcelUuid
 import android.util.Log
 import java.util.UUID
 
@@ -74,11 +72,25 @@ class HeartRateManager(private val context: Context) {
         fun onScanFailed(errorCode: Int)
     }
 
+    /** Reads the device name without crashing on Android 12+ without BLUETOOTH_CONNECT. */
+    private fun safeDeviceName(device: BluetoothDevice, result: ScanResult): String? {
+        val fromScanRecord = result.scanRecord?.deviceName
+        if (!fromScanRecord.isNullOrBlank()) return fromScanRecord
+        return try {
+            device.name
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+
     private fun handleScanResult(result: ScanResult) {
         val device = result.device
-        val name = device.name ?: result.scanRecord?.deviceName
-        ?: guessNameFromScanRecord(result.scanRecord)
-        val address = device.address
+        val name = safeDeviceName(device, result)
+        val address = try {
+            device.address
+        } catch (_: SecurityException) {
+            return
+        }
 
         // Accept devices that either advertise the Heart Rate Service UUID or expose a
         // plausible heart-rate-related name. This keeps the list focused on HR monitors.
@@ -100,7 +112,8 @@ class HeartRateManager(private val context: Context) {
     /**
      * Decides whether a scan result represents a heart-rate monitor. A device qualifies if it
      * advertises the Heart Rate Service (0x180D) in its service list, or its name contains
-     * common heart-rate keywords (since some cheap monitors don't advertise the service UUID).
+     * common heart-rate keywords (since some cheap monitors like the HR40 don't advertise the
+     * service UUID).
      */
     private fun looksLikeHeartRateMonitor(result: ScanResult, name: String?): Boolean {
         val record = result.scanRecord
@@ -109,15 +122,12 @@ class HeartRateManager(private val context: Context) {
         if (advertisesHrService) return true
 
         // Fallback: match by name. Covers devices like "HR40" that may not advertise the service UUID.
-        val n = name?.lowercase().orEmpty()
-        val keywords = listOf("heart", "hrm", "puls", "hr-", " hr", "hr40", "hr40", "sensor")
-        return keywords.any { n.contains(it) } || n.matches(Regex(".*hr\\d{2,3}.*"))
-    }
-
-    private fun guessNameFromScanRecord(record: android.bluetooth.le.ScanRecord?): String? {
-        record ?: return null
-        // Some devices put their name into the manufacturer data or complete local name only.
-        return record.deviceName
+        val n = name?.lowercase().orEmpty().trim()
+        if (n.isEmpty()) return false
+        val keywords = listOf("heart", "hrm", "puls", "polar", "garmin", "wahoo", "sensor")
+        if (keywords.any { n.contains(it) }) return true
+        // "HR40", "HR-408", "BKHUB ..." style model codes that start with HR.
+        return n.contains(Regex("(^|[^a-z])hr[-_ ]?\\d{2,3}"))
     }
 
     /** Starts a scan for heart-rate monitors. Returns false if Bluetooth is unavailable. */
@@ -134,20 +144,19 @@ class HeartRateManager(private val context: Context) {
             return false
         }
 
-        // Prefer filtering by the Heart Rate Service UUID, but also allow unfiltered scan so we
-        // can fall back to name-based detection for non-conformant devices.
-        val filters = listOf(
-            ScanFilter.Builder()
-                .setServiceUuid(ParcelUuid(HeartRateUuids.SERVICE))
-                .build()
-        )
+        // Defensive: make sure no previous scan is still registered on the same callback,
+        // otherwise startScan() fails with SCAN_FAILED_ALREADY_STARTED (1).
+        stopScanQuietly(scanner)
+
+        // Unfiltered scan so we can detect HR monitors by name even if they don't advertise the
+        // Heart Rate Service UUID (common for cheap devices like the HR40). looksLikeHeartRateMonitor
+        // narrows the list afterwards.
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
             .build()
 
         return try {
-            scanner.startScan(filters, settings, scanCallback)
-            // Additionally run a short unfiltered pass to catch name-only devices.
             scanner.startScan(null, settings, scanCallback)
             true
         } catch (e: SecurityException) {
@@ -158,12 +167,25 @@ class HeartRateManager(private val context: Context) {
 
     fun stopScan() {
         val scanner = adapter?.bluetoothLeScanner
-        if (scanner != null) {
-            try {
-                scanner.stopScan(scanCallback)
-            } catch (_: SecurityException) {
-            }
+        if (scanner != null) stopScanQuietly(scanner)
+    }
+
+    private fun stopScanQuietly(scanner: android.bluetooth.le.BluetoothLeScanner) {
+        try {
+            scanner.stopScan(scanCallback)
+        } catch (_: SecurityException) {
+        } catch (_: IllegalStateException) {
         }
+    }
+
+    /** Human-readable explanation of an [android.bluetooth.le.ScanCallback] error code. */
+    fun describeScanError(errorCode: Int): String = when (errorCode) {
+        ScanCallback.SCAN_FAILED_ALREADY_STARTED -> "Scan already started"
+        ScanCallback.SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "App not registered with the system"
+        ScanCallback.SCAN_FAILED_INTERNAL_ERROR -> "Bluetooth internal error"
+        ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED -> "BLE not supported"
+        // API 26+
+        else -> "Scan failed (error $errorCode)"
     }
 
     // ─────────────────────────────────────────────────────────────────────
