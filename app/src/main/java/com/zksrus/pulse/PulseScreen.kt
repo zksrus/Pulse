@@ -138,7 +138,7 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = if (device.isBonded) "—" else "${device.rssi} dBm",
+                    text = if (device.online) "${device.rssi} dBm" else "—",
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -156,7 +156,7 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
                 Tag(typeTag)
                 Tag("packets: ${device.packetCount}")
                 if (device.pinned) Tag("pinned")
-                if (!device.online && !device.isBonded) Tag("offline")
+                if (!device.online) Tag("offline")
             }
         }
     }

@@ -47,10 +47,10 @@ class DeviceScanner(context: Context) {
                 key = d.address ?: "bonded:${d.name ?: System.identityHashCode(d)}",
                 address = d.address ?: "—",
                 name = safeName(d),
-                rssi = 0,
+                rssi = Int.MIN_VALUE, // unknown; sorts below any real signal
                 isClassic = true,
                 isBonded = true,
-                lastSeenMs = System.currentTimeMillis(),
+                lastSeenMs = 0L, // offline until it actually advertises
             )
         }
     }
@@ -90,8 +90,8 @@ class DeviceScanner(context: Context) {
                 address = safeAddress(d) ?: "—",
                 name = safeName(d),
                 rssi = result.rssi,
-                isClassic = false,
-                isBonded = false,
+                isClassic = prev?.isClassic ?: false,
+                isBonded = prev?.isBonded ?: false,
                 lastSeenMs = now,
                 packetCount = (prev?.packetCount ?: 0) + 1,
             )
@@ -110,7 +110,12 @@ class DeviceScanner(context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun mergeBonded() {
-        bondedDevices().forEach { if (!devices.containsKey(it.key)) devices[it.key] = it }
+        // Seed the list with bonded classic devices, but never overwrite a row that is
+        // already being fed live packets by the BLE scanner (a bonded phone that also
+        // advertises would otherwise be demoted to "offline, no signal").
+        bondedDevices().forEach {
+            devices.putIfAbsent(it.key, it)
+        }
         dispatch()
     }
 
@@ -120,8 +125,8 @@ class DeviceScanner(context: Context) {
         val it = devices.entries.iterator()
         while (it.hasNext()) {
             val (key, info) = it.next()
-            if (info.isBonded) continue // keep bonded classic devices for context
             if (keepPredicate(key)) continue // pinned devices stay even when stale
+            if (info.isBonded && info.lastSeenMs == 0L) continue // never-seen bonded: keep for context
             if (info.lastSeenMs < cutoffMs) {
                 it.remove()
                 changed = true
@@ -132,11 +137,13 @@ class DeviceScanner(context: Context) {
 
     private fun dispatch() {
         val now = System.currentTimeMillis()
+        // Online = advertised within the stale window. Bonded devices that never
+        // advertised (lastSeenMs == 0) are offline — but kept for context.
         val sorted = devices.values.map { d ->
-            d.copy(online = d.isBonded || d.lastSeenMs >= now - STALE_AFTER_MS)
+            d.copy(online = d.lastSeenMs != 0L && d.lastSeenMs >= now - STALE_AFTER_MS)
         }.sortedWith(
-            compareByDescending<DeviceInfo> { it.rssi }
-                .thenBy { it.isBonded }
+            compareByDescending<DeviceInfo> { it.online }
+                .thenByDescending { it.rssi }
                 .thenBy { it.name ?: it.address }
         )
         handler.post { listener?.invoke(sorted.toList()) }

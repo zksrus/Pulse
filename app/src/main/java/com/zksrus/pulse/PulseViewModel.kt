@@ -91,11 +91,13 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
         val hide = _hideOffline.value
         return list
             .map { it.copy(pinned = it.key in order) }
-            .filter { it.pinned || it.isBonded || !hide || it.online }
+            // Pinned devices stay visible regardless of online state.
+            .filter { it.pinned || !hide || it.online }
             .sortedWith(
                 compareByDescending<DeviceInfo> { it.pinned }
                     // Pinned: lower pin index (more recent) first; unpinned get MAX so they trail.
                     .thenBy { d -> if (d.pinned) order.indexOf(d.key) else Int.MAX_VALUE }
+                    .thenByDescending { it.online }
                     .thenByDescending { it.rssi }
                     .thenBy { it.name ?: it.address }
             )
