@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WifiOff
@@ -106,6 +107,7 @@ fun PulseScreen(
 @Composable
 private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
     val typeTag = when {
+        device.isHeartRate -> "HRM"
         device.isBonded -> "Classic · bonded"
         device.isClassic -> "Classic"
         else -> "BLE"
@@ -113,22 +115,32 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth(),
-        colors = if (device.pinned) {
-            CardDefaults.cardColors(
+        colors = when {
+            device.pinned -> CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             )
-        } else {
-            CardDefaults.cardColors()
+            device.isHeartRate -> CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            else -> CardDefaults.cardColors()
         },
         onClick = onClick,
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (device.pinned) Icons.Default.PushPin else Icons.Default.Bluetooth,
+                    imageVector = when {
+                        device.pinned -> Icons.Default.PushPin
+                        device.isHeartRate -> Icons.Default.Favorite
+                        else -> Icons.Default.Bluetooth
+                    },
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = when {
+                        device.isHeartRate -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                 )
                 Spacer(Modifier.padding(end = 8.dp))
                 Text(

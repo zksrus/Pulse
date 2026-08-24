@@ -15,4 +15,5 @@ data class DeviceInfo(
     var packetCount: Int = 1,
     var pinned: Boolean = false,
     var online: Boolean = true,
+    var isHeartRate: Boolean = false,
 )

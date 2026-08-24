@@ -10,6 +10,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import java.util.UUID
 
 /**
  * Continuous BLE advertisement scanner that surfaces every advertising device around.
@@ -85,6 +86,10 @@ class DeviceScanner(context: Context) {
             val key = safeAddress(d) ?: "anon:${d.name ?: result.rssi}"
             val now = System.currentTimeMillis()
             val prev = devices[key]
+            // A heart-rate sensor stays one for the session: once detected (by UUID or
+            // by name), keep the flag even on later packets that happen to omit the
+            // service UUID list.
+            val isHr = prev?.isHeartRate == true || isHeartRateDevice(result)
             val info = DeviceInfo(
                 key = key,
                 address = safeAddress(d) ?: "—",
@@ -94,6 +99,7 @@ class DeviceScanner(context: Context) {
                 isBonded = prev?.isBonded ?: false,
                 lastSeenMs = now,
                 packetCount = (prev?.packetCount ?: 0) + 1,
+                isHeartRate = isHr,
             )
             devices[key] = info
             dispatch()
@@ -106,6 +112,18 @@ class DeviceScanner(context: Context) {
         override fun onScanFailed(errorCode: Int) {
             scanning = false
         }
+    }
+
+    /**
+     * Detects a chest-strap / HRM beacon. Primary signal is the standard Heart Rate
+     * Service UUID (0x180D) in the advertising payload; falls back to a name allowlist
+     * for devices that omit the service list from their advertisement.
+     */
+    private fun isHeartRateDevice(result: ScanResult): Boolean {
+        val record = result.scanRecord ?: return false
+        if (record.serviceUuids?.any { it.uuid == HEART_RATE_SERVICE_UUID } == true) return true
+        val name = record.deviceName?.lowercase() ?: return false
+        return HR_NAME_HINTS.any { name.contains(it) }
     }
 
     @SuppressLint("MissingPermission")
@@ -166,6 +184,16 @@ class DeviceScanner(context: Context) {
         }
 
     companion object {
+        /** Standard GATT Heart Rate Service. */
+        private val HEART_RATE_SERVICE_UUID: UUID =
+            UUID.fromString("0000180D-0000-1000-8000-00805F9B34FB")
+
+        /** Name fragments typical of chest-strap / HRM beacons (fallback detection). */
+        private val HR_NAME_HINTS = listOf(
+            "hrm", "tickr", "polar", "wahoo", "garmin", "zephyr", "suunto",
+            "sigma", "magene", "hr-", "heart rate", "chest",
+        )
+
         /** A device is considered "offline" once it has not advertised for this long. */
         private const val STALE_AFTER_MS = 12_000L
     }

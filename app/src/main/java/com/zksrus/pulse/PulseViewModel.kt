@@ -97,6 +97,8 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
                 compareByDescending<DeviceInfo> { it.pinned }
                     // Pinned: lower pin index (more recent) first; unpinned get MAX so they trail.
                     .thenBy { d -> if (d.pinned) order.indexOf(d.key) else Int.MAX_VALUE }
+                    // Heart-rate sensors float to the top (just below pinned), online first.
+                    .thenByDescending { it.isHeartRate }
                     .thenByDescending { it.online }
                     .thenByDescending { it.rssi }
                     .thenBy { it.name ?: it.address }
