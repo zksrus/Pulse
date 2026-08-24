@@ -1,6 +1,7 @@
 package com.zksrus.pulse
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
@@ -28,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,16 +42,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.ExperimentalFoundationApi
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PulseScreen(
     devices: List<DeviceInfo>,
     bluetoothEnabled: Boolean,
     hideOffline: Boolean,
+    hrmData: HrmData?,
     onRefresh: () -> Unit,
     onTogglePin: (String) -> Unit,
     onToggleHideOffline: () -> Unit,
+    onToggleHrm: (String) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -92,10 +98,14 @@ fun PulseScreen(
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    hrmData?.let { item { HrmDataPanel(it, onClose = { onToggleHrm("") }) } }
                     items(devices, key = { it.key }) { d ->
                         DeviceCard(
                             device = d,
                             onClick = { onTogglePin(d.key) },
+                            onLongClick = if (d.isHeartRate) {
+                                { onToggleHrm(d.address.takeIf { it.isNotBlank() && it != "—" } ?: d.key) }
+                            } else null,
                         )
                     }
                 }
@@ -104,8 +114,13 @@ fun PulseScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
+private fun DeviceCard(
+    device: DeviceInfo,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
     val typeTag = when {
         device.isHeartRate -> "HRM"
         device.isBonded -> "Classic · bonded"
@@ -114,7 +129,11 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
     }
     Card(
         modifier = Modifier
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         colors = when {
             device.pinned -> CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -126,7 +145,6 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
             )
             else -> CardDefaults.cardColors()
         },
-        onClick = onClick,
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -169,6 +187,14 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
                 Tag("packets: ${device.packetCount}")
                 if (device.pinned) Tag("pinned")
                 if (!device.online) Tag("offline")
+            }
+            if (device.isHeartRate) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Long-press to connect live readings",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -232,4 +258,99 @@ private fun EmptyHint() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun HrmDataPanel(data: HrmData, onClose: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                )
+                Spacer(Modifier.padding(end = 8.dp))
+                Text(
+                    text = when {
+                        data.connected -> "Heart Rate Monitor"
+                        data.connecting -> "Connecting…"
+                        else -> "Disconnected"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Disconnect")
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Primary reading: heart rate, big and central.
+            val bpmText = data.bpm?.let { "$it" } ?: "—"
+            Text(
+                text = bpmText,
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                text = "bpm",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Tag(contactLabel(data.sensorContact))
+                data.bodyLocation?.let { Tag("loc: $it") }
+                data.batteryPercent?.let { Tag("battery: $it%") }
+                data.energyExpended?.let { Tag("energy: $it kJ") }
+            }
+
+            if (data.rrIntervals.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "RR (ms): ${data.rrIntervals.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+
+            val infoLines = buildList {
+                data.manufacturer?.let { add("Manufacturer: $it") }
+                data.modelNumber?.let { add("Model: $it") }
+                data.firmwareRevision?.let { add("Firmware: $it") }
+                data.hardwareRevision?.let { add("Hardware: $it") }
+                data.serialNumber?.let { add("Serial: $it") }
+            }
+            if (infoLines.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                infoLines.forEach {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun contactLabel(c: SensorContact): String = when (c) {
+    SensorContact.NOT_SUPPORTED -> "contact: n/a"
+    SensorContact.CONTACT -> "contact: on skin"
+    SensorContact.NO_CONTACT -> "contact: off"
 }

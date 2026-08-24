@@ -39,13 +39,18 @@ class MainActivity : ComponentActivity() {
                 val devices by vm.devices.collectAsState()
                 val btOn by vm.bluetoothEnabled.collectAsState()
                 val hideOffline by vm.hideOffline.collectAsState()
+                val hrmData by vm.hrmData.collectAsState()
                 PulseScreen(
                     devices = devices,
                     bluetoothEnabled = btOn,
                     hideOffline = hideOffline,
+                    hrmData = hrmData,
                     onRefresh = { startIfReady() },
                     onTogglePin = { vm.togglePin(it) },
                     onToggleHideOffline = { vm.toggleHideOffline() },
+                    onToggleHrm = { address ->
+                        if (address.isEmpty()) vm.disconnectHrm() else vm.connectHrm(address)
+                    },
                 )
             }
         }
@@ -59,6 +64,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        vm.disconnectHrm()
         vm.stopScanning()
     }
 

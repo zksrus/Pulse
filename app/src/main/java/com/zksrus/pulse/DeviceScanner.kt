@@ -40,6 +40,14 @@ class DeviceScanner(context: Context) {
     fun isBluetoothEnabled(): Boolean = adapter != null && adapter!!.isEnabled
 
     @SuppressLint("MissingPermission")
+    fun getRemoteDevice(address: String): BluetoothDevice? =
+        try {
+            adapter?.getRemoteDevice(address)
+        } catch (_: Exception) {
+            null
+        }
+
+    @SuppressLint("MissingPermission")
     fun bondedDevices(): List<DeviceInfo> {
         val a = adapter ?: return emptyList()
         if (!a.isEnabled) return emptyList()

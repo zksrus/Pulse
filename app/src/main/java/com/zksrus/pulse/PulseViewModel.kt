@@ -26,6 +26,11 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     private val _hideOffline = MutableStateFlow(false)
     val hideOffline: StateFlow<Boolean> = _hideOffline.asStateFlow()
 
+    private val _hrmData = MutableStateFlow<HrmData?>(null)
+    val hrmData: StateFlow<HrmData?> = _hrmData.asStateFlow()
+
+    private var gattClient: HrmGattClient? = null
+
     /**
      * Pinned device keys in the order they were pinned (most recently pinned first).
      * A pinned device stays at the top of the list regardless of signal or staleness.
@@ -76,7 +81,27 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
         _devices.value = applyView(_devices.value)
     }
 
+    /**
+     * Connect to an HRM by address and stream live readings (bpm, contact, battery,
+     * RR, device info). If already connected to a device, the previous link is dropped
+     * first — only one HRM is wired at a time.
+     */
+    fun connectHrm(address: String) {
+        disconnectHrm()
+        val remote = scanner.getRemoteDevice(address) ?: return
+        val client = HrmGattClient(remote) { data -> _hrmData.value = data }
+        gattClient = client
+        client.connect()
+    }
+
+    fun disconnectHrm() {
+        gattClient?.disconnect()
+        gattClient = null
+        _hrmData.value = null
+    }
+
     override fun onCleared() {
+        disconnectHrm()
         stopScanning()
         super.onCleared()
     }
