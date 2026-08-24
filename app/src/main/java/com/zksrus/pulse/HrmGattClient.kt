@@ -129,53 +129,44 @@ class HrmGattClient(
             readNext(g)
         }
 
-        override fun onCharacteristicRead(
-            g: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            value: ByteArray,
-        ) {
-            handleRead(characteristic.uuid, value)
-            readNext(g)
-        }
-
-        /** Legacy callback for API < 33 (value passed via characteristic.value). */
-        @Deprecated("Legacy read path for older API levels")
+        /**
+         * Characteristic read result. The status-bearing signature is the only one
+         * implemented: on API 33+ the platform's new value-based callback forwards to
+         * this with GATT_SUCCESS and populates characteristic.value, and on older
+         * API levels it is called directly.
+         */
+        @Deprecated("Single read path for all API levels")
         override fun onCharacteristicRead(
             g: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
             @Suppress("DEPRECATION")
-            handleRead(characteristic.uuid, characteristic.value)
+            handleRead(characteristic.uuid, characteristic.value ?: ByteArray(0))
             readNext(g)
         }
 
-        override fun onCharacteristicChanged(
-            g: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            value: ByteArray,
-        ) {
-            if (characteristic.uuid == HR_MEASUREMENT_UUID) parseHrMeasurement(value)
-        }
-
-        /** Legacy callback for API < 33. */
-        @Deprecated("Legacy notify path for older API levels")
+        /**
+         * Heart Rate Measurement notification. Same forward-compat approach: the legacy
+         * signature receives the value via characteristic.value on every API level.
+         */
+        @Deprecated("Single notify path for all API levels")
         override fun onCharacteristicChanged(
             g: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
         ) {
             @Suppress("DEPRECATION")
-            if (characteristic.uuid == HR_MEASUREMENT_UUID) parseHrMeasurement(characteristic.value)
+            val bytes = characteristic.value ?: return
+            if (characteristic.uuid == HR_MEASUREMENT_UUID) parseHrMeasurement(bytes)
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun readNext(g: BluetoothGatt) {
-        val next = pendingReads.pollFirst() ?: return
+        val next = pendingReads.removeFirstOrNull() ?: return
         try {
             g.readCharacteristic(next)
         } catch (_: Exception) {
-            // Skip unreadable characteristic and continue the queue.
             readNext(g)
         }
     }
