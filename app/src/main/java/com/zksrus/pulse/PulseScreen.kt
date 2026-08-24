@@ -314,17 +314,25 @@ private fun HrmDataPanel(data: HrmData, onClose: () -> Unit) {
                 Tag(contactLabel(data.sensorContact))
                 data.bodyLocation?.let { Tag("loc: $it") }
                 data.batteryPercent?.let { Tag("battery: $it%") }
-                data.energyExpended?.let { Tag("energy: $it kJ") }
             }
 
-            if (data.rrIntervals.isNotEmpty()) {
+            // Secondary metrics with explanatory units.
+            val metrics = buildList {
+                data.energyExpended?.let { add("Energy expended: $it kJ  (cumulative since reset)") }
+                if (data.rrIntervals.isNotEmpty()) {
+                    add("RR intervals: ${data.rrIntervals.joinToString(", ")} ms  (beat-to-beat)")
+                }
+            }
+            if (metrics.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "RR (ms): ${data.rrIntervals.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                )
+                metrics.forEach {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
             }
 
             val infoLines = buildList {

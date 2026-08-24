@@ -199,8 +199,9 @@ class HrmGattClient(
         val rrPresent = (flags and 0x20) != 0
 
         var index = 1
+        // All multi-byte GATT values are little-endian (low byte first).
         val bpm: Int = if (is16Bit) {
-            val v = ((data[index].toInt() and 0xFF) shl 8) or (data[index + 1].toInt() and 0xFF)
+            val v = leUint16(data, index)
             index += 2
             v
         } else {
@@ -211,14 +212,16 @@ class HrmGattClient(
 
         var energy: Int? = null
         if (energyPresent && index + 1 < data.size) {
-            energy = ((data[index].toInt() and 0xFF) shl 8) or (data[index + 1].toInt() and 0xFF)
+            energy = leUint16(data, index)
             index += 2
         }
 
+        // RR-intervals are in units of 1/1024 s; convert to ms for display.
         val rr = ArrayList<Int>()
         if (rrPresent) {
             while (index + 1 < data.size) {
-                rr.add(((data[index].toInt() and 0xFF) shl 8) or (data[index + 1].toInt() and 0xFF))
+                val raw = leUint16(data, index)
+                rr.add(Math.round(raw / 1024.0 * 1000.0).toInt())
                 index += 2
             }
         }
@@ -237,6 +240,10 @@ class HrmGattClient(
         )
         emit()
     }
+
+    /** Reads a little-endian uint16 from [data] starting at [offset]. */
+    private fun leUint16(data: ByteArray, offset: Int): Int =
+        (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
 
     private fun emit() {
         val snapshot = current
