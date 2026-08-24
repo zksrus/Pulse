@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pulse</string>
+    <string name="unknown_device">Unknown device</string>
+    <string name="location_unknown">Unknown location</string>
+</resources>
