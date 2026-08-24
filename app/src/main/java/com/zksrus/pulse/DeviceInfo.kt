@@ -13,4 +13,5 @@ data class DeviceInfo(
     val isBonded: Boolean,
     val lastSeenMs: Long,
     var packetCount: Int = 1,
+    var pinned: Boolean = false,
 )

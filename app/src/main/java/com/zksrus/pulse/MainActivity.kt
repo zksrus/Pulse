@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
                     devices = devices,
                     bluetoothEnabled = btOn,
                     onRefresh = { startIfReady() },
+                    onTogglePin = { vm.togglePin(it) },
                 )
             }
         }

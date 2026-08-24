@@ -16,8 +16,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -39,6 +41,7 @@ fun PulseScreen(
     devices: List<DeviceInfo>,
     bluetoothEnabled: Boolean,
     onRefresh: () -> Unit,
+    onTogglePin: (String) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -69,7 +72,10 @@ fun PulseScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(devices, key = { it.key }) { d ->
-                        DeviceCard(d)
+                        DeviceCard(
+                            device = d,
+                            onClick = { onTogglePin(d.key) },
+                        )
                     }
                 }
             }
@@ -78,29 +84,41 @@ fun PulseScreen(
 }
 
 @Composable
-private fun DeviceCard(d: DeviceInfo) {
+private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
     val typeTag = when {
-        d.isBonded -> "Classic · bonded"
-        d.isClassic -> "Classic"
+        device.isBonded -> "Classic · bonded"
+        device.isClassic -> "Classic"
         else -> "BLE"
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth(),
+        colors = if (device.pinned) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        } else {
+            CardDefaults.cardColors()
+        },
+        onClick = onClick,
+    ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Bluetooth,
+                    imageVector = if (device.pinned) Icons.Default.PushPin else Icons.Default.Bluetooth,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.padding(end = 8.dp))
                 Text(
-                    text = d.name?.takeIf { it.isNotBlank() } ?: "Unknown device",
+                    text = device.name?.takeIf { it.isNotBlank() } ?: "Unknown device",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = if (d.isBonded) "—" else "${d.rssi} dBm",
+                    text = if (device.isBonded) "—" else "${device.rssi} dBm",
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -108,7 +126,7 @@ private fun DeviceCard(d: DeviceInfo) {
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = d.address,
+                text = device.address,
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -116,7 +134,8 @@ private fun DeviceCard(d: DeviceInfo) {
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tag(typeTag)
-                Tag("packets: ${d.packetCount}")
+                Tag("packets: ${device.packetCount}")
+                if (device.pinned) Tag("pinned")
             }
         }
     }

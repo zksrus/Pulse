@@ -27,6 +27,12 @@ class DeviceScanner(context: Context) {
 
     var listener: ((List<DeviceInfo>) -> Unit)? = null
 
+    /**
+     * Predicate telling [pruneOlderThan] to keep a device regardless of staleness.
+     * The ViewModel sets this to its pinned-key set so pinned items never drop out.
+     */
+    var keepPredicate: (String) -> Boolean = { false }
+
     private val devices = LinkedHashMap<String, DeviceInfo>()
     private var scanning = false
 
@@ -113,8 +119,9 @@ class DeviceScanner(context: Context) {
         var changed = false
         val it = devices.entries.iterator()
         while (it.hasNext()) {
-            val (_, info) = it.next()
+            val (key, info) = it.next()
             if (info.isBonded) continue // keep bonded classic devices for context
+            if (keepPredicate(key)) continue // pinned devices stay even when stale
             if (info.lastSeenMs < cutoffMs) {
                 it.remove()
                 changed = true

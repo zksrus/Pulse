@@ -1,15 +1,10 @@
 package com.zksrus.pulse
 
 import android.app.Application
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 class PulseViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -28,8 +23,15 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     private val _bluetoothEnabled = MutableStateFlow(false)
     val bluetoothEnabled: StateFlow<Boolean> = _bluetoothEnabled.asStateFlow()
 
+    /**
+     * Pinned device keys in the order they were pinned (most recently pinned first).
+     * A pinned device stays at the top of the list regardless of signal or staleness.
+     */
+    private val pinnedKeys = LinkedHashSet<String>()
+
     init {
-        scanner.listener = { list -> _devices.value = list }
+        scanner.keepPredicate = { synchronized(pinnedKeys) { it in pinnedKeys } }
+        scanner.listener = { list -> _devices.value = sortAndApplyPins(list) }
     }
 
     fun refreshBluetoothState() {
@@ -50,9 +52,40 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
         scanner.stop()
     }
 
+    /** Toggle the pinned state of a device; pinned items stick to the top of the list. */
+    fun togglePin(key: String) {
+        synchronized(pinnedKeys) {
+            if (!pinnedKeys.remove(key)) {
+                // Add at the front: reinsert so the most recent pin sits highest.
+                val copy = ArrayList(pinnedKeys)
+                copy.add(0, key)
+                pinnedKeys.clear()
+                pinnedKeys.addAll(copy)
+            }
+        }
+        // Re-emit the current list with updated ordering/pin flags.
+        _devices.value = sortAndApplyPins(_devices.value)
+    }
+
     override fun onCleared() {
         stopScanning()
         super.onCleared()
+    }
+
+    /**
+     * Pinned devices first (most recently pinned highest), then the rest by descending
+     * RSSI. Applies the current [pinnedKeys] to each item's [DeviceInfo.pinned] flag.
+     */
+    private fun sortAndApplyPins(list: List<DeviceInfo>): List<DeviceInfo> {
+        val order: List<String>
+        synchronized(pinnedKeys) { order = pinnedKeys.toList() }
+        return list.map { it.copy(pinned = it.key in order) }.sortedWith(
+            compareByDescending<DeviceInfo> { it.pinned }
+                // Pinned: lower pin index (more recent) first; unpinned get MAX so they trail.
+                .thenBy { d -> if (d.pinned) order.indexOf(d.key) else Int.MAX_VALUE }
+                .thenByDescending { it.rssi }
+                .thenBy { it.name ?: it.address }
+        )
     }
 
     companion object {
