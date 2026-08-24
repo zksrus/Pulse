@@ -23,6 +23,9 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     private val _bluetoothEnabled = MutableStateFlow(false)
     val bluetoothEnabled: StateFlow<Boolean> = _bluetoothEnabled.asStateFlow()
 
+    private val _hideOffline = MutableStateFlow(false)
+    val hideOffline: StateFlow<Boolean> = _hideOffline.asStateFlow()
+
     /**
      * Pinned device keys in the order they were pinned (most recently pinned first).
      * A pinned device stays at the top of the list regardless of signal or staleness.
@@ -31,7 +34,7 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         scanner.keepPredicate = { synchronized(pinnedKeys) { it in pinnedKeys } }
-        scanner.listener = { list -> _devices.value = sortAndApplyPins(list) }
+        scanner.listener = { list -> _devices.value = applyView(list) }
     }
 
     fun refreshBluetoothState() {
@@ -64,7 +67,13 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         // Re-emit the current list with updated ordering/pin flags.
-        _devices.value = sortAndApplyPins(_devices.value)
+        _devices.value = applyView(_devices.value)
+    }
+
+    /** Toggle hiding of offline devices; pinned devices stay visible either way. */
+    fun toggleHideOffline() {
+        _hideOffline.value = !_hideOffline.value
+        _devices.value = applyView(_devices.value)
     }
 
     override fun onCleared() {
@@ -73,19 +82,23 @@ class PulseViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Pinned devices first (most recently pinned highest), then the rest by descending
-     * RSSI. Applies the current [pinnedKeys] to each item's [DeviceInfo.pinned] flag.
+     * Applies [hideOffline] (pinned devices stay visible regardless), sorts pinned
+     * items to the top (most recently pinned first) and the rest by descending RSSI.
      */
-    private fun sortAndApplyPins(list: List<DeviceInfo>): List<DeviceInfo> {
+    private fun applyView(list: List<DeviceInfo>): List<DeviceInfo> {
         val order: List<String>
         synchronized(pinnedKeys) { order = pinnedKeys.toList() }
-        return list.map { it.copy(pinned = it.key in order) }.sortedWith(
-            compareByDescending<DeviceInfo> { it.pinned }
-                // Pinned: lower pin index (more recent) first; unpinned get MAX so they trail.
-                .thenBy { d -> if (d.pinned) order.indexOf(d.key) else Int.MAX_VALUE }
-                .thenByDescending { it.rssi }
-                .thenBy { it.name ?: it.address }
-        )
+        val hide = _hideOffline.value
+        return list
+            .map { it.copy(pinned = it.key in order) }
+            .filter { it.pinned || it.isBonded || !hide || it.online }
+            .sortedWith(
+                compareByDescending<DeviceInfo> { it.pinned }
+                    // Pinned: lower pin index (more recent) first; unpinned get MAX so they trail.
+                    .thenBy { d -> if (d.pinned) order.indexOf(d.key) else Int.MAX_VALUE }
+                    .thenByDescending { it.rssi }
+                    .thenBy { it.name ?: it.address }
+            )
     }
 
     companion object {

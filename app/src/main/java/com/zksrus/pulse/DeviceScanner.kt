@@ -131,8 +131,10 @@ class DeviceScanner(context: Context) {
     }
 
     private fun dispatch() {
-        // Strongest signal first; bonded classic devices keep their place at the tail.
-        val sorted = devices.values.sortedWith(
+        val now = System.currentTimeMillis()
+        val sorted = devices.values.map { d ->
+            d.copy(online = d.isBonded || d.lastSeenMs >= now - STALE_AFTER_MS)
+        }.sortedWith(
             compareByDescending<DeviceInfo> { it.rssi }
                 .thenBy { it.isBonded }
                 .thenBy { it.name ?: it.address }
@@ -155,4 +157,9 @@ class DeviceScanner(context: Context) {
         } catch (_: SecurityException) {
             null
         }
+
+    companion object {
+        /** A device is considered "offline" once it has not advertised for this long. */
+        private const val STALE_AFTER_MS = 12_000L
+    }
 }

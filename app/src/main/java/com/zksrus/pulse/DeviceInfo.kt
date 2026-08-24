@@ -14,4 +14,5 @@ data class DeviceInfo(
     val lastSeenMs: Long,
     var packetCount: Int = 1,
     var pinned: Boolean = false,
+    var online: Boolean = true,
 )

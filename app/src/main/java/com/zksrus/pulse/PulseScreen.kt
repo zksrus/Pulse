@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -18,9 +20,11 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,14 +44,30 @@ import androidx.compose.ui.unit.dp
 fun PulseScreen(
     devices: List<DeviceInfo>,
     bluetoothEnabled: Boolean,
+    hideOffline: Boolean,
     onRefresh: () -> Unit,
     onTogglePin: (String) -> Unit,
+    onToggleHideOffline: () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Pulse — nearby Bluetooth devices") },
-                actions = {},
+                actions = {
+                    FilterChip(
+                        selected = hideOffline,
+                        onClick = onToggleHideOffline,
+                        label = { Text("Online only") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.WifiOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                },
             )
         },
         floatingActionButton = {
@@ -136,6 +156,7 @@ private fun DeviceCard(device: DeviceInfo, onClick: () -> Unit) {
                 Tag(typeTag)
                 Tag("packets: ${device.packetCount}")
                 if (device.pinned) Tag("pinned")
+                if (!device.online && !device.isBonded) Tag("offline")
             }
         }
     }

@@ -38,11 +38,14 @@ class MainActivity : ComponentActivity() {
             PulseTheme {
                 val devices by vm.devices.collectAsState()
                 val btOn by vm.bluetoothEnabled.collectAsState()
+                val hideOffline by vm.hideOffline.collectAsState()
                 PulseScreen(
                     devices = devices,
                     bluetoothEnabled = btOn,
+                    hideOffline = hideOffline,
                     onRefresh = { startIfReady() },
                     onTogglePin = { vm.togglePin(it) },
+                    onToggleHideOffline = { vm.toggleHideOffline() },
                 )
             }
         }
