@@ -1,4 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Pulse</string>
+    <string name="daily_goal">Дневная цель</string>
+    <string name="steps">шагов</string>
+    <string name="calories">ккал</string>
+    <string name="distance">км</string>
+    <string name="active_time">мин</string>
+    <string name="weekly_activity">Активность за неделю</string>
+    <string name="sign_in">Войти через Huawei ID</string>
+    <string name="sign_out">Выйти</string>
+    <string name="health_permission_required">Для работы приложения необходим доступ к данным здоровья</string>
+    <string name="demo_mode">Demo-режим</string>
+    <string name="connecting">Подключение к Huawei Health Kit…</string>
+    <string name="error_health_kit">Ошибка Health Kit</string>
+    <string name="retry">Повторить</string>
+    <string name="mon">Пн</string>
+    <string name="tue">Вт</string>
+    <string name="wed">Ср</string>
+    <string name="thu">Чт</string>
+    <string name="fri">Пт</string>
+    <string name="sat">Сб</string>
+    <string name="sun">Вс</string>
+    <string name="goal_5k">5K</string>
+    <string name="goal_8k">8K</string>
+    <string name="goal_10k">10K</string>
+    <string name="goal_15k">15K</string>
+    <string name="goal_20k">20K</string>
 </resources>

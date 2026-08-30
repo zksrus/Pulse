@@ -10,14 +10,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.DirectionsWalk
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.zksrus.pulse.ui.theme.PulseTheme
 
 class MainActivity : ComponentActivity() {
 
     private val vm by viewModels<PulseViewModel>()
+    private val stepVm by viewModels<StepViewModel>()
 
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -36,22 +42,55 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             PulseTheme {
+                var selectedTab by remember { mutableIntStateOf(0) }
+
                 val devices by vm.devices.collectAsState()
                 val btOn by vm.bluetoothEnabled.collectAsState()
                 val hideOffline by vm.hideOffline.collectAsState()
                 val hrmData by vm.hrmData.collectAsState()
-                PulseScreen(
-                    devices = devices,
-                    bluetoothEnabled = btOn,
-                    hideOffline = hideOffline,
-                    hrmData = hrmData,
-                    onRefresh = { startIfReady() },
-                    onTogglePin = { vm.togglePin(it) },
-                    onToggleHideOffline = { vm.toggleHideOffline() },
-                    onToggleHrm = { address ->
-                        if (address.isEmpty()) vm.disconnectHrm() else vm.connectHrm(address)
-                    },
-                )
+
+                val stepUiState by stepVm.uiState.collectAsState()
+
+                Scaffold(
+                    bottomBar = {
+                        NavigationBar {
+                            NavigationBarItem(
+                                icon = { Icon(Icons.Default.Bluetooth, contentDescription = null) },
+                                label = { Text("Устройства") },
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 }
+                            )
+                            NavigationBarItem(
+                                icon = { Icon(Icons.Default.DirectionsWalk, contentDescription = null) },
+                                label = { Text("Шаги") },
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 }
+                            )
+                        }
+                    }
+                ) { padding ->
+                    when (selectedTab) {
+                        0 -> PulseScreen(
+                            devices = devices,
+                            bluetoothEnabled = btOn,
+                            hideOffline = hideOffline,
+                            hrmData = hrmData,
+                            onRefresh = { startIfReady() },
+                            onTogglePin = { vm.togglePin(it) },
+                            onToggleHideOffline = { vm.toggleHideOffline() },
+                            onToggleHrm = { address ->
+                                if (address.isEmpty()) vm.disconnectHrm() else vm.connectHrm(address)
+                            },
+                            modifier = Modifier.padding(padding)
+                        )
+                        1 -> StepCounterScreen(
+                            uiState = stepUiState,
+                            onRefresh = { stepVm.refresh() },
+                            onGoalChanged = { /* Goal update */ },
+                            modifier = Modifier.padding(padding)
+                        )
+                    }
+                }
             }
         }
     }
