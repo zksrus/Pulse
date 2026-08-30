@@ -298,6 +298,7 @@ fun WeeklyChart(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GoalSelector(
     currentGoal: Long,

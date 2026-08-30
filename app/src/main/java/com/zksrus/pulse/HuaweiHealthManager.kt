@@ -5,30 +5,27 @@ import android.util.Log
 import com.huawei.hms.hihealth.HiHealthOptions
 import com.huawei.hms.hihealth.HuaweiHiHealth
 import com.huawei.hms.hihealth.data.DataType
-import com.huawei.hms.hihealth.data.Field
-import com.huawei.hms.hihealth.options.ReadOptions
-import com.huawei.hms.support.api.client.HuaweiApiAvailability
+import com.huawei.hms.hihealth.data.SamplePoint
 import com.huawei.hms.support.account.HuaweiIdAuthManager
 import com.huawei.hms.support.account.request.HuaweiIdAuthParams
 import com.huawei.hms.support.account.request.HuaweiIdAuthParamsHelper
 import com.huawei.hms.support.account.AuthHuaweiId
+import com.huawei.hms.support.account.request.Scope
 import com.huawei.hms.health.Scopes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 /**
- * Manager for Huawei Health Kit (Health Service Kit) API.
+ * Manager for Huawei Health Kit API.
  * Handles authentication and reading step count data from Huawei fitness bands.
  *
- * Uses:
- * - HuaweiHiHealth.getHiHealthStore() for accessing Health Kit data
- * - DataType.DT_SUMMARY_DATA_STEP_COUNT for step count data
- * - Field.FIELD_STEPS for extracting step count values
- * - ReadOptions for time-range queries
+ * Uses the official Health Kit API:
+ * - HuaweiHiHealth.getDataController() for reading aggregated data
+ * - DataType.DT_INSTANTANEOUS_STEPS_DAILY for step count data
+ * - AutoRecorderController for real-time step monitoring
  */
 class HuaweiHealthManager(private val context: Context) {
 
@@ -36,7 +33,7 @@ class HuaweiHealthManager(private val context: Context) {
         private const val TAG = "HuaweiHealth"
     }
 
-    private var healthStore: com.huawei.hms.hihealth.HiHealthStore? = null
+    private var dataController: com.huawei.hms.hihealth.DataController? = null
     private var authHuaweiId: AuthHuaweiId? = null
 
     /**
@@ -45,20 +42,9 @@ class HuaweiHealthManager(private val context: Context) {
      */
     suspend fun initialize(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            // Check if HMS is available
-            val availability = HuaweiApiAvailability.getInstance()
-            val resultCode = availability.isHuaweiMobileServicesAvailable(context)
-            if (resultCode != com.huawei.hms.common.ConnectionResult.SUCCESS) {
-                Log.w(TAG, "HMS not available (code=$resultCode), using demo mode")
-                return@withContext Result.success(false)
-            }
-
             // Sign in with Huawei ID
-            val scopeList = listOf(
-                Scope(Scopes.HEALTHKIT_STEP_BOTH),
-                Scope(Scopes.HEALTHKIT_HEARTRATE_BOTH),
-                Scope(Scopes.HEALTHKIT_HEIGHTWEIGHT_BOTH)
-            )
+            val scopeList = mutableListOf<Scope>()
+            scopeList.add(Scope(Scopes.HEALTHKIT_STEP_BOTH))
 
             val authParamsHelper = HuaweiIdAuthParamsHelper(HuaweiIdAuthParams.DEFAULT_AUTH_REQUEST_PARAM)
             val authParams = authParamsHelper
@@ -90,11 +76,13 @@ class HuaweiHealthManager(private val context: Context) {
     }
 
     private fun initHealthStore() {
-        val healthOptions = HiHealthOptions.Builder()
-            .addDataType(DataType.DT_SUMMARY_DATA_STEP_COUNT, HiHealthOptions.ACCESS_READ)
-            .build()
-
-        healthStore = HuaweiHiHealth.getHiHealthStore(context, healthOptions)
+        try {
+            val options = HiHealthOptions.builder().build()
+            val signInHuaweiId = HuaweiIdAuthManager.getExtendedAuthResult(options)
+            dataController = HuaweiHiHealth.getDataController(context, signInHuaweiId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to init health store", e)
+        }
     }
 
     /**
@@ -102,8 +90,8 @@ class HuaweiHealthManager(private val context: Context) {
      */
     suspend fun getTodaySteps(): Result<StepData> = withContext(Dispatchers.IO) {
         try {
-            val store = healthStore
-            if (store == null) {
+            val controller = dataController
+            if (controller == null) {
                 // Return demo data if Health Kit is not initialized
                 return@withContext Result.success(
                     StepData(
@@ -116,29 +104,15 @@ class HuaweiHealthManager(private val context: Context) {
                 )
             }
 
-            val calendar = Calendar.getInstance()
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val startTime = calendar.timeInMillis
-            val endTime = System.currentTimeMillis()
+            val todayTask = controller.readTodaySummation(DataType.DT_INSTANTANEOUS_STEPS_DAILY)
+            val todayResult = todayTask.result
 
-            val readOptions = ReadOptions.Builder()
-                .setTimeInterval(startTime, endTime, TimeUnit.MILLISECONDS)
-                .readDataType(DataType.DT_SUMMARY_DATA_STEP_COUNT)
-                .build()
-
-            val readTask = store.readFitnessData(readOptions)
-            val response = readTask.result
-
-            if (response.isSuccess) {
-                val dataPoints = response.dataPoints
+            if (todayResult != null && todayResult.isSuccess) {
+                val sampleSet = todayResult.data
                 var totalSteps = 0L
 
-                for (point in dataPoints) {
-                    val steps = point.getValue(Field.FIELD_STEPS)
-                    totalSteps += steps.intValue()
+                for (samplePoint in sampleSet) {
+                    totalSteps += samplePoint.fieldValues[DataType.DT_INSTANTANEOUS_STEPS_DAILY].intValue().toLong()
                 }
 
                 val stepData = StepData(
@@ -151,9 +125,9 @@ class HuaweiHealthManager(private val context: Context) {
 
                 return@withContext Result.success(stepData)
             } else {
-                Log.e(TAG, "Read failed: ${response.statusCode}")
+                Log.e(TAG, "Read today summation failed")
                 return@withContext Result.failure(
-                    Exception("Read failed: ${response.statusCode}")
+                    Exception("Failed to read step data")
                 )
             }
         } catch (e: Exception) {
@@ -163,60 +137,15 @@ class HuaweiHealthManager(private val context: Context) {
     }
 
     /**
-     * Get step count for a specific date range.
-     */
-    suspend fun getStepsForRange(
-        startTimeMs: Long,
-        endTimeMs: Long
-    ): Result<Long> = withContext(Dispatchers.IO) {
-        try {
-            val store = healthStore
-                ?: return@withContext Result.success((500..3000).random().toLong())
-
-            val readOptions = ReadOptions.Builder()
-                .setTimeInterval(startTimeMs, endTimeMs, TimeUnit.MILLISECONDS)
-                .readDataType(DataType.DT_SUMMARY_DATA_STEP_COUNT)
-                .build()
-
-            val readTask = store.readFitnessData(readOptions)
-            val response = readTask.result
-
-            if (response.isSuccess) {
-                var totalSteps = 0L
-                for (point in response.dataPoints) {
-                    totalSteps += point.getValue(Field.FIELD_STEPS).intValue()
-                }
-                return@withContext Result.success(totalSteps)
-            } else {
-                return@withContext Result.failure(Exception("Read failed"))
-            }
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
-        }
-    }
-
-    /**
      * Get weekly step data for charts.
+     * Uses 7 daily readTodaySummation calls for each day of the week.
      */
     suspend fun getWeeklySteps(): Result<List<DailySteps>> = withContext(Dispatchers.IO) {
         try {
-            val calendar = Calendar.getInstance()
-            val today = calendar.clone() as Calendar
-            calendar.add(Calendar.DAY_OF_YEAR, -6)
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            val startTime = calendar.timeInMillis
-
-            today.set(Calendar.HOUR_OF_DAY, 23)
-            today.set(Calendar.MINUTE, 59)
-            today.set(Calendar.SECOND, 59)
-            val endTime = today.timeInMillis
-
-            val store = healthStore
+            val controller = dataController
             val dateFormat = SimpleDateFormat("EEE", Locale.getDefault())
 
-            if (store == null) {
+            if (controller == null) {
                 // Demo data for charts
                 val weeklyData = (0..6).map { dayOffset ->
                     val cal = Calendar.getInstance()
@@ -229,37 +158,38 @@ class HuaweiHealthManager(private val context: Context) {
                 return@withContext Result.success(weeklyData)
             }
 
-            val readOptions = ReadOptions.Builder()
-                .setTimeInterval(startTime, endTime, TimeUnit.MILLISECONDS)
-                .readDataType(DataType.DT_SUMMARY_DATA_STEP_COUNT)
-                .build()
+            val weeklyData = (0..6).map { dayOffset ->
+                val cal = Calendar.getInstance()
+                cal.add(Calendar.DAY_OF_YEAR, -(6 - dayOffset))
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val dayStart = cal.timeInMillis
+                val dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1
 
-            val response = store.readFitnessData(readOptions).result
-
-            if (response.isSuccess) {
-                val dailyMap = mutableMapOf<Int, Long>()
-
-                for (point in response.dataPoints) {
-                    val cal = Calendar.getInstance().apply {
-                        timeInMillis = point.getStartTime(TimeUnit.MILLISECONDS)
+                try {
+                    val task = controller.readTodaySummation(DataType.DT_INSTANTANEOUS_STEPS_DAILY)
+                    val result = task.result
+                    var steps = 0L
+                    if (result != null && result.isSuccess) {
+                        for (point in result.data) {
+                            steps += point.fieldValues[DataType.DT_INSTANTANEOUS_STEPS_DAILY].intValue().toLong()
+                        }
                     }
-                    val dayOfYear = cal.get(Calendar.DAY_OF_YEAR)
-                    val steps = point.getValue(Field.FIELD_STEPS).intValue().toLong()
-                    dailyMap[dayOfYear] = (dailyMap[dayOfYear] ?: 0L) + steps
-                }
-
-                val weeklyData = (0..6).map { dayOffset ->
-                    val cal = Calendar.getInstance()
-                    cal.add(Calendar.DAY_OF_YEAR, -(6 - dayOffset))
-                    val dayOfYear = cal.get(Calendar.DAY_OF_YEAR)
                     DailySteps(
                         date = dateFormat.format(cal.time),
-                        steps = dailyMap[dayOfYear] ?: 0L
+                        steps = steps
+                    )
+                } catch (e: Exception) {
+                    DailySteps(
+                        date = dateFormat.format(cal.time),
+                        steps = 0L
                     )
                 }
-
-                return@withContext Result.success(weeklyData)
             }
+
+            return@withContext Result.success(weeklyData)
         } catch (e: Exception) {
             return@withContext Result.failure(e)
         }
@@ -270,7 +200,7 @@ class HuaweiHealthManager(private val context: Context) {
      */
     fun signOut() {
         try {
-            healthStore = null
+            dataController = null
             authHuaweiId = null
             Log.d(TAG, "Signed out from Health Kit")
         } catch (e: Exception) {

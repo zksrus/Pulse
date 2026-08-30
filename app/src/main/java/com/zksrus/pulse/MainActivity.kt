@@ -80,8 +80,7 @@ class MainActivity : ComponentActivity() {
                             onToggleHideOffline = { vm.toggleHideOffline() },
                             onToggleHrm = { address ->
                                 if (address.isEmpty()) vm.disconnectHrm() else vm.connectHrm(address)
-                            },
-                            modifier = Modifier.padding(padding)
+                            }
                         )
                         1 -> StepCounterScreen(
                             uiState = stepUiState,

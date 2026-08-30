@@ -71,11 +71,14 @@ dependencies {
     // Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.7.6")
 
-    // Huawei Health Kit
-    implementation("com.huawei.hms:health:6.11.0.300")
+    // Huawei HMS Core Base (HuaweiApiAvailability, ConnectionResult)
+    implementation("com.huawei.hms:base:6.9.0.300")
 
-    // Huawei Account Kit
-    implementation("com.huawei.hms:hwid:6.11.0.300")
+    // Huawei Health Kit
+    implementation("com.huawei.hms:health:6.9.0.300")
+
+    // Huawei Account Kit (HuaweiIdAuthManager, AuthHuaweiId)
+    implementation("com.huawei.hms:hwid:6.4.0.301")
 
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
