@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.huawei.agconnect")
 }
 
 android {
@@ -72,8 +71,8 @@ dependencies {
     // Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.7.6")
 
-    // Huawei Health Kit (Extended Health Kit - Health Service Kit)
-    implementation("com.huawei.hms:health:13.0.11.301")
+    // Huawei Health Kit
+    implementation("com.huawei.hms:health:6.11.0.300")
 
     // Huawei Account Kit
     implementation("com.huawei.hms:hwid:6.11.0.300")
